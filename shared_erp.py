@@ -119,11 +119,17 @@ def calculate_cycle_time(q_opt: float, demand: float) -> float:
         return 0.0
     return (q_opt / demand) * 365.0
 
-def generate_cost_curves(demand: float, unit_price: float, cp: float, cal: float, q_opt: float) -> pd.DataFrame:
-    """Genera las curvas de costos secundarias y de Costo Total en función de Q."""
-    q_min = max(1, int(q_opt * 0.2))
-    q_max = max(10, int(q_opt * 2.3))
-    q_range = np.linspace(q_min, q_max, 250)
+def generate_cost_curves(demand: float, unit_price: float, cp: float, cal: float, q_opt: float, current_stock: float = 0, pr_val: float = 0) -> pd.DataFrame:
+    """
+    Genera las curvas de costos secundarias y de Costo Total en función de Q.
+    Adapta el dominio horizontal para abarcar Q*, el Stock Actual y el Punto de Reorden.
+    """
+    max_ref = max(q_opt, current_stock, pr_val)
+    min_ref = min(q_opt, current_stock if current_stock > 5 else q_opt, pr_val if pr_val > 5 else q_opt)
+    
+    q_min = max(1, int(min_ref * 0.2))
+    q_max = max(10, int(max_ref * 2.2))
+    q_range = np.linspace(q_min, q_max, 300)
 
     ordering_curve = (demand / q_range) * cp
     holding_curve = (q_range / 2.0) * cal
@@ -286,7 +292,7 @@ def render_product_page(product_id: str):
     apply_green_theme_css()
     prod_info = CATALOG[product_id]
 
-    # Barra lateral de configuración del producto
+    # Barra lateral de configuración del producto con claves únicas por SKU
     st.sidebar.markdown(f"## {prod_info['name']}")
     st.sidebar.markdown("**Parámetros de Entrada**")
 
@@ -294,21 +300,25 @@ def render_product_page(product_id: str):
     unit_price = st.sidebar.number_input(
         "Precio Unitario ($)",
         min_value=0.1, max_value=50000.0, value=float(prod_info["unit_price"]), step=10.0,
+        key=f"unit_price_{product_id}",
         help="Costo directo unitario de compra."
     )
     base_demand = st.sidebar.number_input(
         "Demanda Anual Base (D)",
         min_value=10, max_value=200000, value=int(prod_info["base_demand"]), step=50,
+        key=f"base_demand_{product_id}",
         help="Demanda anual proyectada sin factor de mercado."
     )
     cp = st.sidebar.number_input(
         "Costo de Pedido (CP) [$ por orden]",
         min_value=1.0, max_value=10000.0, value=float(prod_info["order_cost"]), step=10.0,
+        key=f"order_cost_{product_id}",
         help="Costo fijo administrativo y logístico de emitir una orden."
     )
     cal = st.sidebar.number_input(
         "Costo de Almacenamiento (Cal) [$/ud/año]",
         min_value=0.1, max_value=5000.0, value=float(prod_info["holding_cost"]), step=1.0,
+        key=f"holding_cost_{product_id}",
         help="Costo anual de mantener una unidad en bodega."
     )
 
@@ -316,23 +326,26 @@ def render_product_page(product_id: str):
     current_stock = st.sidebar.number_input(
         "Stock Actual en Bodega (Uds)",
         min_value=0, max_value=100000, value=int(prod_info["current_stock"]), step=5,
+        key=f"current_stock_{product_id}",
         help="Nivel físico actual disponible en almacén."
     )
     lead_time = st.sidebar.number_input(
         "T Proveedor (Lead Time) [Días]",
         min_value=1, max_value=180, value=int(prod_info["lead_time_days"]), step=1,
+        key=f"lead_time_{product_id}",
         help="Días que tarda el proveedor en entregar el pedido."
     )
     safety_stock = st.sidebar.number_input(
         "Stock de Seguridad (SS) [Uds]",
         min_value=0, max_value=10000, value=int(prod_info["safety_stock"]), step=5,
+        key=f"safety_stock_{product_id}",
         help="Inventario colchón para evitar desabasto."
     )
 
     st.sidebar.markdown("### 3. Factor de Mercado")
-    ticker_input = st.sidebar.text_input("Ticker Yahoo Finance", value=prod_info["ticker"])
-    market_window = st.sidebar.selectbox("Ventana Temporal", ["5d", "1mo", "3mo", "6mo", "1y"], index=1)
-    elasticity = st.sidebar.slider("Sensibilidad (Beta)", min_value=0.0, max_value=3.0, value=float(prod_info["elasticity"]), step=0.1)
+    ticker_input = st.sidebar.text_input("Ticker Yahoo Finance", value=prod_info["ticker"], key=f"ticker_{product_id}")
+    market_window = st.sidebar.selectbox("Ventana Temporal", ["5d", "1mo", "3mo", "6mo", "1y"], index=1, key=f"window_{product_id}")
+    elasticity = st.sidebar.slider("Sensibilidad (Beta)", min_value=0.0, max_value=3.0, value=float(prod_info["elasticity"]), step=0.1, key=f"elasticity_{product_id}")
 
     # Botón de retorno al inicio
     st.sidebar.markdown("---")
@@ -470,15 +483,15 @@ def render_product_page(product_id: str):
 
         st.markdown(f"**Estado del Inventario:** {badge_text} | Stock Físico: **{current_stock} uds**")
 
-    # Gráfico interactivo con alto contraste: Rojo, Verde, Azul
+    # Gráfico interactivo con alto contraste: Rojo, Verde, Azul y marcadores operativos
     st.markdown("---")
-    st.markdown("### Curvas de Costos Secundarios y Punto de Minimización")
+    st.markdown("### Curvas de Costos Secundarios y Posición Operativa")
     st.write(
-        "El tamaño de lote óptimo Q* se ubica en el punto exacto donde la curva del **Costo de Pedido (Rojo)** "
-        "interseca la curva del **Costo de Almacenamiento (Azul)**, minimizando la curva de **Costos Operativos Variables (Verde)**."
+        f"El gráfico muestra la optimización económica específica para **{prod_info['name']}** "
+        f"contrastando las curvas de costos con la **posición real de inventario (Stock Actual)** y el **Punto de Reorden (PR)**."
     )
 
-    df_curves = generate_cost_curves(d_din, unit_price, cp, cal, q_opt)
+    df_curves = generate_cost_curves(d_din, unit_price, cp, cal, q_opt, current_stock, pr_val)
 
     fig = go.Figure()
 
@@ -488,7 +501,8 @@ def render_product_page(product_id: str):
         y=df_curves["Costo_Pedido"],
         mode="lines",
         name="Costo de Pedido (D/Q · CP)",
-        line=dict(color="#dc2626", width=2.5, dash="dash")
+        line=dict(color="#dc2626", width=2.5, dash="dash"),
+        hovertemplate="Q: %{x:.1f} uds<br>C. Pedido: $%{y:,.2f}<extra></extra>"
     ))
 
     # 2. Curva Costo de Almacenamiento (AZUL de alto contraste, línea discontinua)
@@ -497,7 +511,8 @@ def render_product_page(product_id: str):
         y=df_curves["Costo_Almacenamiento"],
         mode="lines",
         name="Costo Almacenamiento (Q/2 · Cal)",
-        line=dict(color="#2563eb", width=2.5, dash="dash")
+        line=dict(color="#2563eb", width=2.5, dash="dash"),
+        hovertemplate="Q: %{x:.1f} uds<br>C. Almacén: $%{y:,.2f}<extra></extra>"
     ))
 
     # 3. Curva Costos Operativos Variables (VERDE principal, línea sólida continua)
@@ -506,7 +521,8 @@ def render_product_page(product_id: str):
         y=df_curves["Costos_Operativos_Inv"],
         mode="lines",
         name="Costos Variables (Pedido + Almacén)",
-        line=dict(color="#16a34a", width=3.2)
+        line=dict(color="#16a34a", width=3.2),
+        hovertemplate="Q: %{x:.1f} uds<br>C. Variables: $%{y:,.2f}<extra></extra>"
     ))
 
     # 4. Marcador en el Punto Óptimo Q* (Negro carbón con borde visible)
@@ -515,30 +531,55 @@ def render_product_page(product_id: str):
         y=[c_ped + c_alm],
         mode="markers+text",
         name="Q* Óptimo (Intersección)",
-        text=[f"  Q* = {q_opt:.1f} uds<br>  C.Inv = ${c_ped + c_alm:,.2f}"],
+        text=[f"  Q* = {q_opt:.1f} uds"],
         textposition="top right",
         marker=dict(
             color="#111827",
             size=14,
             symbol="diamond",
             line=dict(color="#ffffff", width=2)
-        )
+        ),
+        hovertemplate="<b>Q* Óptimo</b><br>Lote: %{x:.1f} uds<br>Costo Mínimo: $%{y:,.2f}<extra></extra>"
     ))
 
-    # Línea vertical guía de alta visibilidad
+    # 5. Línea vertical guía de Q*
     fig.add_vline(
         x=q_opt,
         line_width=1.5,
         line_dash="dot",
-        line_color="#4b5563",
-        annotation_text=f"Q* = {q_opt:.1f}",
+        line_color="#111827",
+        annotation_text=f"Q*={q_opt:.0f}",
         annotation_position="bottom right"
     )
 
+    # 6. Línea vertical de Punto de Reorden (PR) - Ámbar
+    fig.add_vline(
+        x=pr_val,
+        line_width=2,
+        line_dash="dashdot",
+        line_color="#d97706",
+        annotation_text=f"PR={pr_val:.0f}",
+        annotation_position="top left"
+    )
+
+    # 7. Línea vertical de Stock Actual en Bodega - Púrpura/Índigo
+    stock_color = "#dc2626" if current_stock <= pr_val else "#6366f1"
+    fig.add_vline(
+        x=current_stock,
+        line_width=2,
+        line_dash="solid",
+        line_color=stock_color,
+        annotation_text=f"Stock Actual={current_stock}",
+        annotation_position="bottom left"
+    )
+
     fig.update_layout(
-        title=f"Optimización de Costos de Inventario para {prod_info['name']}",
-        xaxis_title="Tamaño del Lote de Pedido (Q) [Unidades]",
-        yaxis_title="Costo Anual ($ USD)",
+        title=dict(
+            text=f"Optimización y Posición Operativa: {prod_info['name']} (D={d_din:,.0f} uds/año | CP=${cp:.0f} | Cal=${cal:.1f})",
+            font=dict(size=15, color="#111827")
+        ),
+        xaxis_title="Unidades (Q, Stock Actual, Punto de Reorden)",
+        yaxis_title="Costo Anual Operativo ($ USD)",
         hovermode="x unified",
         plot_bgcolor="#ffffff",
         paper_bgcolor="#ffffff",
@@ -564,8 +605,8 @@ def render_product_page(product_id: str):
             borderwidth=1
         ),
         template="plotly_white",
-        height=500,
-        margin=dict(l=40, r=40, t=80, b=40)
+        height=520,
+        margin=dict(l=40, r=40, t=90, b=40)
     )
 
     st.plotly_chart(fig, use_container_width=True)

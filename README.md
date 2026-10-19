@@ -45,9 +45,9 @@ Las dependencias principales son:
 Para arrancar el servidor web local de Streamlit, ejecuta:
 
 ```powershell
-py -3.13 -m streamlit run app.py
+python -m streamlit run app.py
 ```
-*(O simplemente `streamlit run app.py` si tu ejecutable de Streamlit está en el PATH de tu sistema).*
+*(O también `py -3.13 -m streamlit run app.py` / `streamlit run app.py`).*
 
 Una vez iniciado, la terminal indicará la URL local:
 ```text
@@ -151,7 +151,9 @@ El gráfico en cada página de producto utiliza una terna cromática de alto con
 - **Línea Roja Discontinua:** **Costo Anual de Pedido** $\left(\frac{D}{Q} \cdot CP\right)$. Decrece a medida que el tamaño de lote aumenta (menos órdenes al año).
 - **Línea Azul Discontinua:** **Costo Anual de Almacenamiento** $\left(\frac{Q}{2} \cdot Cal\right)$. Crece linealmente a mayor tamaño de lote (más inventario promedio).
 - **Línea Verde Continua:** **Costos Variables Operativos** (Pedido + Almacenamiento). Presenta una parábola convexa cuyo mínimo coincide con la intersección de las líneas roja y azul.
-- **Marcador Diamante Negro:** Posición exacta del **Lote Óptimo $Q^*$** con su costo mínimo asociado.
+- **Marcador Diamante Negro ($Q^*$):** Posición exacta del **Lote Óptimo** con su costo mínimo asociado.
+- **Línea Vertical Ámbar ($PR$):** Marca el **Punto de Reorden** umbral para reposición.
+- **Línea Vertical Púrpura / Roja (Stock Actual):** Posición física real del inventario en bodega (rojo si está en déficit por debajo del $PR$).
 
 ---
 
